@@ -47,7 +47,7 @@ namespace MISA.ASP.ClientApp.UI
                             LogUtil.LogInfo($"Start Handle Uri: {uri}");
                             var lstParam = uri.ToString().Split(':');
                             var actionIDKey = lstParam[1];
-                            var aspClient = new AspClient();
+                            var aspClient = new ASPClient();
 
                             var versionInfor = await aspClient.GetLastestVersion();
                             if(versionInfor.Version != ConfigurationManager.AppSettings["Version"] && versionInfor.ForceUpdate)
@@ -80,6 +80,10 @@ namespace MISA.ASP.ClientApp.UI
                                     case Models.Enums.ActionType.CheckETaxAccount:
                                         frmCheckETaxAccount frmCheckETaxAccount = new frmCheckETaxAccount();
                                         frmCheckETaxAccount.ShowForm(actionIDKey, actionInfor.Data);
+                                        break;
+                                    case Models.Enums.ActionType.SyncPaymentRequest:
+                                        frmPaymentRequest frmPaymentRequest = new frmPaymentRequest();
+                                        frmPaymentRequest.ShowForm(actionIDKey, actionInfor.Data);
                                         break;
                                     case Models.Enums.ActionType.OpenITaxViewer:
                                         var eTaxViewer = new ETaxViewer();

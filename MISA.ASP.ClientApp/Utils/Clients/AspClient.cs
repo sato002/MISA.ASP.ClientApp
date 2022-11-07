@@ -16,13 +16,13 @@ using System.Threading.Tasks;
 
 namespace MISA.ASP.ClientApp.Utils.Clients
 {
-    internal class AspClient
+    internal class ASPClient
     {
         private readonly static string ASP_APP_URL = ConfigurationManager.AppSettings["ASP_App_Url"];
         private readonly static string ASP_API_URL = ConfigurationManager.AppSettings["ASP_Api_Url"];
         public HttpClient _client { get; set; }
 
-        public AspClient()
+        public ASPClient()
         {
             _client = new HttpClient() { BaseAddress = new Uri(ASP_API_URL) };
         }
@@ -127,7 +127,27 @@ namespace MISA.ASP.ClientApp.Utils.Clients
             }
         }
 
-        public async Task UploadFileToServer(int profileID, FileTypeEnum fileType, string localFilePath, string localFileName, int customerID, string transactionID)
+        public async Task InsertPaymentRequest(int profileID, SyncPaymentRequestOutput output)
+        {
+            try
+            {
+                LogUtil.LogInfo("InsertPaymentRequest:" + JsonConvert.SerializeObject(output));
+                var byteContent = new ByteArrayContent(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(output)));
+                byteContent.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                var message = await _client.PostAsync($"api/{profileID}/ETaxPaymentRequest/SyncPaymentRequest", byteContent);
+                LogUtil.LogInfo(JsonConvert.SerializeObject(message));
+                LogUtil.LogInfo(await message.Content.ReadAsStringAsync());
+                message.EnsureSuccessStatusCode();
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError(ex, "InsertPaymentRequest");
+                LogUtil.LogInfo(JsonConvert.SerializeObject(_client));
+                throw ex;
+            }
+        }
+
+        public async Task UploadTaxDecFileToServer(int profileID, FileTypeEnum fileType, string localFilePath, string localFileName, int customerID, string transactionID)
         {
             try
             {
@@ -145,13 +165,31 @@ namespace MISA.ASP.ClientApp.Utils.Clients
             }
         }
 
-        public async Task<HttpResponseMessage> GetFileFromServer(int profileID, int customerID, string transactionID, FileTypeEnum fileType, string fileName)
+        public async Task<HttpResponseMessage> GetTaxDecFileFromServer(int profileID, int customerID, string transactionID, FileTypeEnum fileType, string fileName)
         {
             try
             {
                 var message = await _client.GetAsync($"api/{profileID}/ETaxDeclaration/GetTaxDecFile?type={fileType}&customerID={customerID}&transactionID={transactionID}&fileName={fileName}");
                 message.EnsureSuccessStatusCode();
                 return message;
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
+        public async Task UploadPaymentRequestFileToServer(int profileID, FileTypeEnum fileType, string localFilePath, string localFileName, int customerID)
+        {
+            try
+            {
+                using (var multipartFormContent = new MultipartFormDataContent())
+                {
+                    var fileStreamContent = new StreamContent(File.OpenRead($"{localFilePath}\\{localFileName}"));
+                    multipartFormContent.Add(fileStreamContent, name: "file", fileName: localFileName);
+                    var message = await _client.PostAsync($"api/{profileID}/EtaxPaymentRequest/UploadPaymentRequestFile?type={fileType}&customerID={customerID}", multipartFormContent);
+                    message.EnsureSuccessStatusCode();
+                }
             }
             catch (Exception ex)
             {

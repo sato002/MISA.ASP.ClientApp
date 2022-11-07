@@ -115,7 +115,7 @@ namespace MISA.ASP.ClientApp.UI.TaxDeclaration
 
                 if (output.Details.Count > 0)
                 {
-                    var aspClient = new AspClient();
+                    var aspClient = new ASPClient();
                     aspClient.SetAuthentication(syncInput.AccessToken);
                     await aspClient.UpdateETaxAccountState(syncInput.ProfileID, output);
                 }

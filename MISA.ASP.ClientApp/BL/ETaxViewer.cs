@@ -68,9 +68,9 @@ namespace MISA.ASP.ClientApp.BL
 
                 if(!File.Exists(filePath))
                 {
-                    var aspClient = new AspClient();
+                    var aspClient = new ASPClient();
                     aspClient.SetAuthentication(input.AccessToken);
-                    var message = await aspClient.GetFileFromServer(input.ProfileID, input.CustomerID, input.TransactionID, input.FileType, input.FileName);
+                    var message = await aspClient.GetTaxDecFileFromServer(input.ProfileID, input.CustomerID, input.TransactionID, input.FileType, input.FileName);
 
                     if(message != null && message.Content != null)
                     {

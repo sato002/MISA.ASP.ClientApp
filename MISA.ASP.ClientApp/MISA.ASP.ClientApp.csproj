@@ -81,15 +81,18 @@
     <Compile Include="Models\ActionInfor.cs" />
     <Compile Include="Models\ActionInput\BaseASPInput.cs" />
     <Compile Include="Models\ActionInput\SynTaxDec\CheckETaxAccountInput.cs" />
+    <Compile Include="Models\ActionInput\SynTaxDec\SyncPaymentRequestInput.cs" />
     <Compile Include="Models\ActionInput\SynTaxDec\SyncTaxDecRegisteredInput.cs" />
     <Compile Include="Models\ActionInput\SynTaxDec\SyncTaxDecSubmittedInput.cs" />
     <Compile Include="Models\ActionInput\SynTaxDec\ViewTaxFileInput.cs" />
     <Compile Include="Models\ActionOutput\SyncTaxDec\CheckETaxAccountOutput.cs" />
+    <Compile Include="Models\ActionOutput\SyncTaxDec\SyncPaymentRequestOutput.cs" />
     <Compile Include="Models\ActionOutput\SyncTaxDec\SyncTaxDecRegisteredOutput.cs" />
     <Compile Include="Models\ActionOutput\SyncTaxDec\SyncTaxDecSubmittedOutput.cs" />
     <Compile Include="Models\ApiResult.cs" />
     <Compile Include="Models\CaptchaResult.cs" />
     <Compile Include="Models\Enums\CommonEnum.cs" />
+    <Compile Include="Models\EtaxCrawler\PaymentRequest.cs" />
     <Compile Include="Models\EtaxCrawler\TaxDeclarationRegistered.cs" />
     <Compile Include="Models\EtaxCrawler\TaxDeclarationSubmitted.cs" />
     <Compile Include="Models\EtaxCrawler\TaxDecNotification.cs" />
@@ -128,6 +131,12 @@
     <Compile Include="UI\TaxDeclaration\frmCheckETaxAccount.Designer.cs">
       <DependentUpon>frmCheckETaxAccount.cs</DependentUpon>
     </Compile>
+    <Compile Include="UI\TaxDeclaration\frmPaymentRequest.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\TaxDeclaration\frmPaymentRequest.Designer.cs">
+      <DependentUpon>frmPaymentRequest.cs</DependentUpon>
+    </Compile>
     <Compile Include="UI\TaxDeclaration\frmTaxDecRegistered.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -140,7 +149,7 @@
     <Compile Include="UI\TaxDeclaration\frmTaxDecSubmitted.Designer.cs">
       <DependentUpon>frmTaxDecSubmitted.cs</DependentUpon>
     </Compile>
-    <Compile Include="Utils\Clients\AspClient.cs" />
+    <Compile Include="Utils\Clients\ASPClient.cs" />
     <Compile Include="Utils\Clients\MisaCaptchaClient.cs" />
     <Compile Include="Utils\Converter\BoolConverter.cs" />
     <Compile Include="Utils\DesignPattern\CommonPattern.cs" />
@@ -176,6 +185,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="UI\TaxDeclaration\frmCheckETaxAccount.resx">
       <DependentUpon>frmCheckETaxAccount.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\TaxDeclaration\frmPaymentRequest.resx">
+      <DependentUpon>frmPaymentRequest.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="UI\TaxDeclaration\frmTaxDecRegistered.resx">
       <DependentUpon>frmTaxDecRegistered.cs</DependentUpon>

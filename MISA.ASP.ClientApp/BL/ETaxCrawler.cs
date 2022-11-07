@@ -317,6 +317,23 @@ namespace MISA.ASP.ClientApp.BL
                 throw ex;
             }
         }
+
+        public async Task SignIn()
+        {
+            await Step1_GotoJumpPage();
+            await Task.Delay(1000, _stoppingToken);
+            await Step2_GotoIndexPage();
+            await Task.Delay(1000, _stoppingToken);
+            await Step3_GotoHomePage();
+            await Task.Delay(1000, _stoppingToken);
+            await Step4_GotoLoginPage();
+            await Task.Delay(1000, _stoppingToken);
+            var captcha = await Step5_ResolveCaptcha();
+            await Step6_PostLoginForm(captcha);
+            await Task.Delay(1000, _stoppingToken);
+            await Step7_GotoMainPage();
+            await Task.Delay(3000, _stoppingToken);
+        }
         #endregion
 
         #region Các bước Đồng bộ tờ khai đã đăng ký
@@ -986,25 +1003,357 @@ namespace MISA.ASP.ClientApp.BL
         }
         #endregion
 
-        public async Task SignIn()
+        #region Các bước tra cứu Giấy nộp tiền
+        private async Task Step9_GotoTraCuuGiayNopTienPage()
         {
-            await Step1_GotoJumpPage();
-            await Task.Delay(1000, _stoppingToken);
-            await Step2_GotoIndexPage();
-            await Task.Delay(1000, _stoppingToken);
-            await Step3_GotoHomePage();
-            await Task.Delay(1000, _stoppingToken);
-            await Step4_GotoLoginPage();
-            await Task.Delay(1000, _stoppingToken);
-            var captcha = await Step5_ResolveCaptcha();
-            await Step6_PostLoginForm(captcha);
-            await Task.Delay(1000, _stoppingToken);
-            await Step7_GotoMainPage();
-            await Task.Delay(3000, _stoppingToken);
+            HttpResponseMessage responseMessage = null;
+
+            try
+            {
+                LogUtil.LogTrace("Step9_GotoTraCuuGiayNopTienPage.Start");
+                responseMessage = await _client.GetAsync($"/etaxnnt/Request?" +
+                        $"&dse_sessionId={_sessionID}" +
+                        $"&dse_applicationId=-1" +
+                        $"&dse_pageId=7" +
+                        $"&dse_operationName=corpQueryTaxProc" +
+                        $"&dse_processorState=initial" +
+                        $"&dse_nextEventName=start");
+
+                responseMessage.EnsureSuccessStatusCode();
+                var html = await responseMessage.Content.ReadAsStringAsync();
+                string pattern = @"name=""dse_processorId"" value=""(.*?)""";
+                foreach (Match match in Regex.Matches(html, pattern))
+                {
+                    if (match.Success && match.Groups.Count > 0)
+                    {
+                        _processorID = match.Groups[1].Value;
+                    }
+                }
+
+                if (String.IsNullOrEmpty(_processorID))
+                {
+                    throw new NotFoundProcessIdException();
+                }
+                LogUtil.LogTrace("Step9_GotoTraCuuGiayNopTienPage.End");
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError(ex, responseMessage);
+                throw ex;
+            }
         }
 
+        private async Task<HtmlDocument> Step10_ClickButtonTraCuuGiayNopTien(string fromDate, string toDate)
+        {
+            HtmlDocument doc = new HtmlDocument();
+            HttpResponseMessage responseMessage = null;
+            try
+            {
+                LogUtil.LogTrace("Step10_ClickButtonTraCuuGiayNopTien.Start");
+                var content = new FormUrlEncodedContent(new[]
+                   {
+                    new KeyValuePair<string, string>("dse_sessionId", _sessionID),
+                    new KeyValuePair<string, string>("dse_applicationId", "-1"),
+                    new KeyValuePair<string, string>("dse_operationName", "corpQueryTaxProc"),
+                    new KeyValuePair<string, string>("dse_pageId", "10"),
+                    new KeyValuePair<string, string>("dse_processorState", "viewQueryPage"),
+                    new KeyValuePair<string, string>("dse_processorId", _processorID),
+                    new KeyValuePair<string, string>("dse_errorPage", "/etax/query_tax_information.jsp"),
+                    new KeyValuePair<string, string>("dse_nextEventName", "query"),
+                    new KeyValuePair<string, string>("pn", "1"),
+                    new KeyValuePair<string, string>("sct", ""),
+                    new KeyValuePair<string, string>("ctuId", ""),
+                    new KeyValuePair<string, string>("soGnt", ""),
+                    new KeyValuePair<string, string>("ma_giao_dich", ""),
+                    new KeyValuePair<string, string>("so_ctu_nh", ""),
+                    new KeyValuePair<string, string>("so_gnt", ""),
+                    new KeyValuePair<string, string>("ngay_lap_tu_ngay", fromDate),
+                    new KeyValuePair<string, string>("ngay_lap_den_ngay", toDate),
+                    new KeyValuePair<string, string>("ngay_gui_tu_ngay", ""),
+                    new KeyValuePair<string, string>("ngay_gui_den_ngay", ""),
+                    new KeyValuePair<string, string>("ngay_nop_tu_ngay", ""),
+                    new KeyValuePair<string, string>("ngay_nop_den_ngay", ""),
+                    new KeyValuePair<string, string>("ma_nhang", ""),
+                    new KeyValuePair<string, string>("so_tk", ""),
+                    new KeyValuePair<string, string>("nguyen_te", ""),
+                    new KeyValuePair<string, string>("tong_tien_nt_tu", ""),
+                    new KeyValuePair<string, string>("tong_tien_nt_den", ""),
+                    new KeyValuePair<string, string>("trang_thai", ""),
+                });
 
+                responseMessage = await _client.PostAsync("/etaxnnt/Request", content);
+                responseMessage.EnsureSuccessStatusCode();
+                doc.LoadHtml(await responseMessage.Content.ReadAsStringAsync());
+                LogUtil.LogTrace("Step10_ClickButtonTraCuuGiayNopTien.End");
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError(ex, responseMessage);
+                throw ex;
+            }
+            return doc;
+        }
 
+        private async Task<List<PaymentRequest>> Step11_ExtractPaymentRequest(string fromDate, string toDate, HtmlDocument doc)
+        {
+            var lstPaymentRequest = new List<PaymentRequest>();
+
+            try
+            {
+                LogUtil.LogTrace("Step11_ExtractPaymentRequest.Start");
+
+                // Extract html lấy 1 số thông số cơ bản
+                var currentPage = 1;
+                var maxPage = int.Parse(doc.DocumentNode.SelectSingleNode("//*[@id='currAcc']/b[1]").InnerText);
+                LogUtil.LogTrace("Step11_ExtractPaymentRequest.maxPage");
+
+                // Tạo folder để chứa file theo profileID và customerID
+                string folderPath = $"{FileUtil.BASE_PATH}/OutputFiles/{_profileID}/{_customerID}/PaymentRequest";
+                Directory.CreateDirectory(folderPath);
+                LogUtil.LogTrace("Step11_ExtractPaymentRequest.folderPath");
+
+                // Extract luôn các giấy nộp tiền ở page 1
+                await ExtractRequestPayment(fromDate, toDate, doc, lstPaymentRequest);
+                LogUtil.LogTrace("Step11_ExtractPaymentRequest.ExtractTaxDecSubmitted.Page.1");
+
+                // Extract các tờ khai ở các page còn lại nếu có
+                while (currentPage < maxPage)
+                {
+                    currentPage += 1;
+                    LogUtil.LogTrace($"Step11_ExtractPaymentRequest.ExtractTaxDecSubmitted.Page.{currentPage}");
+                    await Step12_ExtractPaymentRequest_NextPage(fromDate, toDate, currentPage, lstPaymentRequest);
+                }
+                LogUtil.LogTrace("Step11_ExtractPaymentRequest.End");
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+
+            return lstPaymentRequest;
+        }
+
+        private async Task Step12_ExtractPaymentRequest_NextPage(string fromDate, string toDate, int page, List<PaymentRequest> lstPaymentRequest)
+        {
+            try
+            {
+                var result = await _client.GetAsync($"/etaxnnt/Request" +
+                        $"?dse_sessionId={_sessionID}" +
+                        $"&dse_applicationId=-1" +
+                        $"&dse_operationName=corpQueryTaxProc" +
+                        $"&dse_pageId=12" +
+                        $"&dse_processorState=viewQueryPage" +
+                        $"&dse_processorId={_processorID}" +
+                        $"&dse_errorPage=error_page.jsp" +
+                        $"&dse_nextEventName=query" +
+                        $"&&pn={page}");
+
+                result.EnsureSuccessStatusCode();
+
+                HtmlDocument doc = new HtmlDocument();
+                doc.LoadHtml(await result.Content.ReadAsStringAsync());
+                await ExtractRequestPayment(fromDate, toDate, doc, lstPaymentRequest);
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
+        /// <summary>
+        /// Trích xuất dữ liệu từ giao diện màn hình kết quả tra cứu giấy nộp tiền
+        /// </summary>
+        /// <param name="sessionID">ID phiên đăng nhập của thuedientu</param>
+        /// <param name="cookieContainer">giả lập Cookie</param>
+        /// <param name="processorID">ID phiên xử lý</param>
+        /// <param name="taxcode">mã số thuế</param>
+        /// <param name="doc">Html Document</param>
+        /// <param name="prevTransactionID">mã TransactionID của tờ khai phía trên (0 nếu là tờ khai đầu tiên trong danh sách)</param>
+        /// <returns></returns>
+        private async Task ExtractRequestPayment(string fromDate, string toDate, HtmlDocument doc, List<PaymentRequest> lstPaymentRequest)
+        {
+            try
+            {
+                LogUtil.LogTrace("ExtractRequestPayment.Start");
+                // Đọc các dòng tr trong tbody
+                var lstTrEl = doc.DocumentNode.SelectNodes("//*[@id='allResultTableBody']/tr");
+                LogUtil.LogTrace("ExtractRequestPayment.SelectNodes.lstTrEl");
+                if (lstTrEl != null && lstTrEl.Count > 0)
+                {
+                    LogUtil.LogTrace($"ExtractRequestPayment.ExtractNodes.lstTrEl.Count:{lstTrEl.Count}");
+                    for (int i = 0; i < lstTrEl.Count; i++)
+                    {
+                        try
+                        {
+                            // Đọc các cột td để lấy dữ liệu
+                            var trEl = lstTrEl[i];
+                            if (trEl.ChildNodes.Count > 0)
+                            {
+                                LogUtil.LogTrace($"ExtractRequestPayment.ExtractNodes.lstTrEl:{i}:{JsonConvert.SerializeObject(trEl.ChildNodes.Count)}");
+                                var childNodes = trEl.Elements("td").ToList();
+                                var iPaymentRequest = new PaymentRequest()
+                                {
+                                    TaxCode = _taxcode,
+                                    Order = childNodes[0].InnerText.Trim(),
+                                    TransactionID = childNodes[1].InnerText.Trim(),
+                                    PaymentRequestID = childNodes[2].InnerText.Trim(),
+                                    Amount = childNodes[3].InnerText.Trim(),
+                                    AmountType = childNodes[4].InnerText.Trim(),
+                                    StateTitle = childNodes[5].InnerText.Trim(),
+                                    RefNo = childNodes[6].InnerText.Trim(),
+                                    CreatedDate = childNodes[7].InnerText.Trim(),
+                                    SentDate = childNodes[8].InnerText.Trim(),
+                                    TaxSubmittedDate = childNodes[9].InnerText.Trim(),
+                                    BankName = childNodes[10].InnerText.Trim(),
+                                    BankAccount = childNodes[11].InnerText.Trim(),
+                                };
+                                LogUtil.LogTrace($"ExtractRequestPayment.ExtractNodes.lstTrEl.{i}.iTaxDec");
+
+                                LogUtil.LogTrace($"ExtractRequestPayment.ExtractNodes.lstTrEl.{i}.aTag");
+                                // Nếu có thẻ a ẩn ở cột thứ 2 thì Tải file transaction về
+                                var aTag = childNodes[12].Element("a");
+                                if (aTag != null)
+                                {
+                                    // các bản ghi có hiddenPaymentRequestID ẩn ở trong thẻ a, giá trị hiddenPaymentRequestID này dùng để tải file về
+                                    var hiddenPaymentRequestID = aTag.GetAttributeValue("href", "");
+                                    if (!string.IsNullOrWhiteSpace(hiddenPaymentRequestID))
+                                    {
+                                        string pattern = @"downloadGNT\((.*?)\)";
+                                        foreach (Match match in Regex.Matches(hiddenPaymentRequestID, pattern))
+                                        {
+                                            if (match.Success && match.Groups.Count > 0)
+                                            {
+                                                hiddenPaymentRequestID = match.Groups[1].Value;
+                                                iPaymentRequest.HiddenPaymentRequestID = hiddenPaymentRequestID;
+                                            }
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    iPaymentRequest.IsHideDownloadLink = true;
+                                }
+
+                                LogUtil.LogTrace($"ExtractRequestPayment.ExtractNodes.lstTrEl.{i}.aTag.End");
+
+                                if (!string.IsNullOrWhiteSpace(iPaymentRequest.HiddenPaymentRequestID))
+                                {
+                                    LogUtil.LogTrace($"ExtractRequestPayment.ExtractNodes.lstTrEl.{i}.folderPath");
+                                    // Tạo folder để chứa file theo TransactionID
+                                    string folderPath = $"{FileUtil.BASE_PATH}/OutputFiles/{_profileID}/{_customerID}/PaymentRequest/{iPaymentRequest.PaymentRequestID}";
+                                    Directory.CreateDirectory(folderPath);
+
+                                    if (!iPaymentRequest.IsHideDownloadLink)
+                                    {
+                                        await Step13_DownloadPaymentRequestFile(fromDate, toDate, iPaymentRequest);
+                                    }
+                                    LogUtil.LogTrace($"ExtractRequestPayment.Step13_DownloadPaymentRequestFile.lstTrEl.{i}.End");
+                                }
+
+                                // add PaymentRequest vào collection kết quả
+                                lstPaymentRequest.Add(iPaymentRequest);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogUtil.LogError(ex);
+                        }
+                    }
+                }
+                LogUtil.LogTrace("ExtractRequestPayment.End");
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError(ex);
+            }
+        }
+
+        private async Task Step13_DownloadPaymentRequestFile(string fromDate, string toDate, PaymentRequest iPaymentRequest)
+        {
+            try
+            {
+                LogUtil.LogTrace($"Step13_DownloadPaymentRequestFile.Start");
+                string folderPath = $"{FileUtil.BASE_PATH}/OutputFiles/{_profileID}/{_customerID}/PaymentRequest";
+                //var files = Directory.GetFiles(folderPath, $"ETAX{iTaxDec.TransactionID}.*");
+                //if (files.Length < 1) // Kiểm tra chưa tồn tại file thì đi tải mới
+                //{
+
+                //}
+
+                var content = new FormUrlEncodedContent(new[]
+                  {
+                    new KeyValuePair<string, string>("dse_sessionId", _sessionID),
+                    new KeyValuePair<string, string>("dse_applicationId", "-1"),
+                    new KeyValuePair<string, string>("dse_operationName", "corpQueryTaxProc"),
+                    new KeyValuePair<string, string>("dse_pageId", "13"),
+                    new KeyValuePair<string, string>("dse_processorState", "viewQueryPage"),
+                    new KeyValuePair<string, string>("dse_processorId", _processorID),
+                    new KeyValuePair<string, string>("dse_errorPage", "/etax/query_tax_information.jsp"),
+                    new KeyValuePair<string, string>("dse_nextEventName", "download"),
+                    new KeyValuePair<string, string>("pn", "1"),
+                    new KeyValuePair<string, string>("sct", ""),
+                    new KeyValuePair<string, string>("ctuId", iPaymentRequest.HiddenPaymentRequestID),
+                    new KeyValuePair<string, string>("soGnt", ""),
+                    new KeyValuePair<string, string>("ma_giao_dich", ""),
+                    new KeyValuePair<string, string>("so_ctu_nh", ""),
+                    new KeyValuePair<string, string>("so_gnt", ""),
+                    new KeyValuePair<string, string>("ngay_lap_tu_ngay", fromDate),
+                    new KeyValuePair<string, string>("ngay_lap_den_ngay", toDate),
+                    new KeyValuePair<string, string>("ngay_gui_tu_ngay", ""),
+                    new KeyValuePair<string, string>("ngay_gui_den_ngay", ""),
+                    new KeyValuePair<string, string>("ngay_nop_tu_ngay", ""),
+                    new KeyValuePair<string, string>("ngay_nop_den_ngay", ""),
+                    new KeyValuePair<string, string>("ma_nhang", ""),
+                    new KeyValuePair<string, string>("so_tk", ""),
+                    new KeyValuePair<string, string>("nguyen_te", ""),
+                    new KeyValuePair<string, string>("tong_tien_nt_tu", ""),
+                    new KeyValuePair<string, string>("tong_tien_nt_den", ""),
+                    new KeyValuePair<string, string>("trang_thai", ""),
+                    new KeyValuePair<string, string>("isReport", "N"),
+                    new KeyValuePair<string, string>("type", "pdf"),
+                });
+
+                var responseMessage = await _client.PostAsync("/etaxnnt/Request", content);
+                responseMessage.EnsureSuccessStatusCode();
+                LogUtil.LogTrace($"Step13_DownloadPaymentRequestFile.PostAsync");
+                var originFileName = responseMessage.Content.Headers.ContentDisposition.FileName;
+                iPaymentRequest.FileName = originFileName.Replace("chungtu", iPaymentRequest.HiddenPaymentRequestID);
+
+                using (var fs = new FileStream($"{folderPath}\\{iPaymentRequest.FileName}", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                {
+                    await responseMessage.Content.CopyToAsync(fs);
+                }
+                LogUtil.LogTrace($"Step13_DownloadPaymentRequestFile.SaveFile");
+                if (Path.GetExtension(iPaymentRequest.FileName) == ".xml")
+                {
+                    LogUtil.LogTrace($"Step13_DownloadPaymentRequestFile.ExtractXml.Start");
+                    // Đọc file để trích xuất 1 số thông tin như: mã ngân hàng, ...
+                    XmlDocument doc = new XmlDocument();
+                    var xmlString = await responseMessage.Content.ReadAsStringAsync();
+                    LogUtil.LogTrace($"Step13_DownloadPaymentRequestFile.ExtractXml.LoadXml: {xmlString}");
+                    doc.LoadXml(xmlString);
+
+                    XmlNamespaceManager ns = new XmlNamespaceManager(doc.NameTable);
+                    ns.AddNamespace("msbld", "http://kekhaithue.gdt.gov.vn/TKhaiThue");
+                    LogUtil.LogTrace("Step13_DownloadPaymentRequestFile.ExtractXml.taxDecCode");
+                    var bankCode = doc.SelectSingleNode("//MA_NHANG_NOP").InnerText;
+                    iPaymentRequest.BankCode = bankCode;
+                    LogUtil.LogTrace($"Step13_DownloadPaymentRequestFile.ExtractXml.End");
+                }
+
+                LogUtil.LogTrace($"Step13_DownloadPaymentRequestFile.End");
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogError(ex);
+            }
+        }
+        #endregion
+
+        #region Các hàm public cho phép tầng trên UI gọi 
+        /// <summary>
+        /// Hàm kiểm tra tính hợp lệ của tài khoản ThueDienTu
+        /// </summary>
         public async Task CheckETaxAccount()
         {
 
@@ -1014,6 +1363,9 @@ namespace MISA.ASP.ClientApp.BL
             });
         }
 
+        /// <summary>
+        /// Hàm đồng bộ tờ khai đã đăng ký
+        /// </summary>
         public async Task<List<TaxDeclarationRegistered>> GetTaxDecRegistered()
         {
 
@@ -1025,6 +1377,9 @@ namespace MISA.ASP.ClientApp.BL
             return Step10_ExtractTaxDecRegistered(doc);
         }
 
+        /// <summary>
+        /// Hàm tra cứu tờ khai đã nộp
+        /// </summary>
         public async Task<List<TaxDeclarationSubmitted>> GetTaxDecSubmitted(string fromDate, string toDate)
         {
             var doc = await CommonPattern.Retry(async () =>
@@ -1037,5 +1392,22 @@ namespace MISA.ASP.ClientApp.BL
             await Task.Delay(1000, _stoppingToken);
             return await Step11_ExtractTaxDecSubmitted(doc);
         }
+
+        /// <summary>
+        /// Hàm tra cứu giấy nộp tiền
+        /// </summary>
+        public async Task<List<PaymentRequest>> GetPaymentRequest(string fromDate, string toDate)
+        {
+            var doc = await CommonPattern.Retry(async () =>
+            {
+                await SignIn();
+                await Step9_GotoTraCuuGiayNopTienPage();
+                await Task.Delay(1000, _stoppingToken);
+                return await Step10_ClickButtonTraCuuGiayNopTien(fromDate, toDate);
+            });
+            await Task.Delay(1000, _stoppingToken);
+            return await Step11_ExtractPaymentRequest(fromDate, toDate, doc);
+        }
+        #endregion
     }
 }

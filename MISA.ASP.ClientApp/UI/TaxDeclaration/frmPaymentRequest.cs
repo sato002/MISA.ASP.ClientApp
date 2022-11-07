@@ -1,7 +1,9 @@
 ﻿using MISA.ASP.ClientApp.BL;
 using MISA.ASP.ClientApp.Models.ActionInput.SynTaxDec;
 using MISA.ASP.ClientApp.Models.ActionOutput.SyncTaxDec;
+using MISA.ASP.ClientApp.Models.Enums;
 using MISA.ASP.ClientApp.Models.EtaxCrawler;
+using MISA.ASP.ClientApp.Models.Exceptions;
 using MISA.ASP.ClientApp.Utils.Clients;
 using MISA.ASP.ClientApp.Utils.Logging;
 using Newtonsoft.Json;
@@ -12,22 +14,20 @@ using System.Configuration;
 using System.Data;
 using System.Drawing;
 using System.IO;
-using MISA.ASP.ClientApp.UI.Common;
+using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using MISA.ASP.ClientApp.Models.Enums;
-using MISA.ASP.ClientApp.Models.Exceptions;
-using MISA.ASP.ClientApp.Models;
+using MISA.ASP.ClientApp.UI.Common;
 using MISA.ASP.ClientApp.Utils.FileHandler;
 
 namespace MISA.ASP.ClientApp.UI.TaxDeclaration
 {
-    public partial class frmTaxDecSubmitted : Form
+    public partial class frmPaymentRequest : Form
     {
         private ASPClient _aspClient { get; set; }
-
-        public frmTaxDecSubmitted()
+        public frmPaymentRequest()
         {
             InitializeComponent();
             Program.InProcessing = true;
@@ -47,45 +47,44 @@ namespace MISA.ASP.ClientApp.UI.TaxDeclaration
                 UpdateProgress(5);
                 Task.Factory.StartNew(() =>
                 {
-                    _  = SyncTaxDecSubmitted(actionID, data);
+                    _ = SyncPaymentRequest(actionID, data);
                 });
             }
         }
 
-        private void frmTaxDecSubmitted_FormClosing(object sender, FormClosingEventArgs e)
+        private void frmPaymentRequest_FormClosing(object sender, FormClosingEventArgs e)
         {
             Program.InProcessing = false;
         }
 
-        public async Task SyncTaxDecSubmitted(string actionID, string data)
+        public async Task SyncPaymentRequest(string actionID, string data)
         {
             try
             {
-                var output = new SyncTaxDecSubmittedOutput() { ActionID = actionID };
-                var syncInput = JsonConvert.DeserializeObject<SyncTaxDecSubmittedInput>(data);
+                var output = new SyncPaymentRequestOutput() { ActionID = actionID };
+                var syncInput = JsonConvert.DeserializeObject<SyncPaymentRequestInput>(data);
                 UpdateProgress(10);
                 if (syncInput != null && syncInput.Details != null && syncInput.Details.Count > 0)
                 {
-
                     var isLocalMode = bool.Parse(ConfigurationManager.AppSettings["IsLocalMode"]);
                     foreach (var detail in syncInput.Details)
                     {
-                        var iOutputDetail = new SyncTaxDecSubmittedOutputDetail() { CustomerID = detail.CustomerID };
+                        var iOutputDetail = new SyncPaymentRequestOutputDetail() { CustomerID = detail.CustomerID };
                         try
                         {
                             if (!isLocalMode)
                             {
                                 var crawler = new ETaxCrawler(syncInput.ProfileID, detail.CustomerID, detail.TaxCode, detail.Username, detail.Password, CancellationToken.None);
-                                var taxDecSubmitted = await crawler.GetTaxDecSubmitted(syncInput.FromDate, syncInput.ToDate);
-                                iOutputDetail.TaxDeclarationSubmitteds = taxDecSubmitted;
+                                var lstPaymentRequest = await crawler.GetPaymentRequest(syncInput.FromDate, syncInput.ToDate);
+                                iOutputDetail.PaymentRequests = lstPaymentRequest;
                             }
                             else
                             {
                                 using (var r = new StreamReader($"{Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppDomain.CurrentDomain.RelativeSearchPath ?? "")}"))
                                 {
                                     string json = r.ReadToEnd();
-                                    List<TaxDeclarationSubmitted> items = JsonConvert.DeserializeObject<List<TaxDeclarationSubmitted>>(json);
-                                    iOutputDetail.TaxDeclarationSubmitteds = items;
+                                    List<PaymentRequest> items = JsonConvert.DeserializeObject<List<PaymentRequest>>(json);
+                                    iOutputDetail.PaymentRequests = items;
                                 }
                             }
                         }
@@ -122,14 +121,14 @@ namespace MISA.ASP.ClientApp.UI.TaxDeclaration
                     }
                 }
 
-                if(output.Details.Count > 0)
+                if (output.Details.Count > 0)
                 {
                     _aspClient.SetAuthentication(syncInput.AccessToken);
-                    await _aspClient.InsertTaxDecSubmitted(syncInput.ProfileID, output);
+                    await _aspClient.InsertPaymentRequest(syncInput.ProfileID, output);
                     UpdateProgress(80);
                     await UploadFileToServer(syncInput.ProfileID, output.Details);
                 }
-                
+
                 UpdateProgress(100);
                 ShowSuccessForm();
             }
@@ -144,7 +143,7 @@ namespace MISA.ASP.ClientApp.UI.TaxDeclaration
             }
         }
 
-        private async Task UploadFileToServer(int profileID, List<SyncTaxDecSubmittedOutputDetail> details)
+        private async Task UploadFileToServer(int profileID, List<SyncPaymentRequestOutputDetail> details)
         {
             if (details != null && details.Count > 0)
             {
@@ -152,51 +151,23 @@ namespace MISA.ASP.ClientApp.UI.TaxDeclaration
                 {
                     try
                     {
-                        if (iOutput.TaxDeclarationSubmitteds != null && iOutput.TaxDeclarationSubmitteds.Count > 0)
+                        if (iOutput.PaymentRequests != null && iOutput.PaymentRequests.Count > 0)
                         {
-                            foreach (var iTaxDec in iOutput.TaxDeclarationSubmitteds)
+                            foreach (var iPaymentRequest in iOutput.PaymentRequests)
                             {
                                 try
                                 {
-                                    var localFolderPath = $"{FileUtil.BASE_PATH}/OutputFiles/{iTaxDec.TaxCode}/{iTaxDec.TransactionID}";
-                                    if (!String.IsNullOrEmpty(iTaxDec.FileName))
+                                    var localFolderPath = $"{FileUtil.BASE_PATH}/OutputFiles/{profileID}/{iOutput.CustomerID}/PaymentRequest";
+                                    if (!String.IsNullOrEmpty(iPaymentRequest.FileName))
                                     {
-                                        await _aspClient.UploadTaxDecFileToServer(
+                                        await _aspClient.UploadPaymentRequestFileToServer(
                                             profileID,
                                             FileTypeEnum.TaxDeclaration,
                                             localFolderPath,
-                                            iTaxDec.FileName,
-                                            iOutput.CustomerID,
-                                            iTaxDec.DisplayTransactionID
+                                            iPaymentRequest.FileName,
+                                            iOutput.CustomerID
                                         );
                                         await Task.Delay(200);
-                                    }
-
-                                    if (iTaxDec.Notifications != null && iTaxDec.Notifications.Count > 0)
-                                    {
-                                        foreach (var iTaxNoti in iTaxDec.Notifications)
-                                        {
-                                            try
-                                            {
-                                                if (!String.IsNullOrEmpty(iTaxNoti.FileName))
-                                                {
-                                                    await _aspClient.UploadTaxDecFileToServer(
-                                                        profileID,
-                                                        FileTypeEnum.TaxNotification,
-                                                        localFolderPath,
-                                                        iTaxNoti.FileName,
-                                                        iOutput.CustomerID,
-                                                        iTaxDec.DisplayTransactionID
-                                                    );
-                                                    await Task.Delay(200);
-                                                }
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                LogUtil.LogError(ex);
-                                                // Không throw ex khi 1 thông báo upload lỗi
-                                            }
-                                        }
                                     }
                                 }
                                 catch (Exception ex)
@@ -249,7 +220,7 @@ namespace MISA.ASP.ClientApp.UI.TaxDeclaration
             }
             else
             {
-                var frmSuccess = new frmSuccess("Đã hoàn thành đồng bộ tờ khai");
+                var frmSuccess = new frmSuccess("Đã hoàn thành tra cứu giấy nộp tiền");
                 frmSuccess.ShowDialog();
             }
         }
@@ -262,7 +233,7 @@ namespace MISA.ASP.ClientApp.UI.TaxDeclaration
             }
             else
             {
-                var frmError = new frmError("Đã có lỗi xảy ra, vui lòng thực hiện đồng bộ lại");
+                var frmError = new frmError("Đã có lỗi xảy ra, vui lòng thực hiện tra cứu lại");
                 frmError.ShowDialog();
             }
         }
